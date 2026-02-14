@@ -113,18 +113,19 @@ const bobDocs = await db.query('my-collection', 'farewell', {
 
 ### Server Options
 
-| Option                    | Description                                                                 | Default    |
-| :------------------------ | :-------------------------------------------------------------------------- | :--------- |
-| `port`                    | Server listening port                                                       | `3001`     |
-| `host`                    | Server host address                                                         | `0.0.0.0`  |
-| `apiKey`                  | Optional key for client authentication                                      | `null`     |
-| `cors`                    | Allowed origins (array)                                                     | `[]` (All) |
-| `streamChunkSize`         | Max results per chunk for streaming                                         | `500`      |
-| `autoSaveOnMutationBurst` | Enable automatic saveToStorage after a burst of mutation calls + idle       | `true`     |
-| `mutationBurstThreshold`  | Number of mutation calls within `mutationBurstWindowMs` to consider a burst | `100`      |
-| `mutationBurstWindowMs`   | Time window (ms) used to count burst mutations                              | `120000`   |
-| `mutationInactivityMs`    | Inactivity window (ms) after last mutation that triggers save               | `30000`    |
-| `minSaveIntervalMs`       | Minimum time (ms) between automatic saves to avoid thrashing                | `10000`    |
+| Option                    | Description                                                                            | Default    |
+| :------------------------ | :------------------------------------------------------------------------------------- | :--------- |
+| `port`                    | Server listening port                                                                  | `3001`     |
+| `host`                    | Server host address                                                                    | `0.0.0.0`  |
+| `apiKey`                  | Optional key for client authentication                                                 | `null`     |
+| `cors`                    | Allowed origins (array)                                                                | `[]` (All) |
+| `streamChunkSize`         | Max results per chunk for streaming                                                    | `500`      |
+| `autoSaveOnMutationBurst` | Enable automatic saveToStorage after a burst of mutation calls + idle                  | `true`     |
+| `autoSaveOnInactivity`    | Save to storage after `mutationInactivityMs` of no mutations (suitable for small apps) | `true`     |
+| `mutationBurstThreshold`  | Number of mutation calls within `mutationBurstWindowMs` to consider a burst            | `5`        |
+| `mutationBurstWindowMs`   | Time window (ms) used to count burst mutations                                         | `120000`   |
+| `mutationInactivityMs`    | Inactivity window (ms) after last mutation that triggers save                          | `30000`    |
+| `minSaveIntervalMs`       | Minimum time (ms) between automatic saves to avoid thrashing                           | `10000`    |
 
 Auto-save on mutation bursts
 
@@ -158,8 +159,21 @@ const server = new VectoriaDBServer({
 
 Log & testing notes:
 
-- When the auto-save runs the server logs: `[VectoriaDBServer] auto-saved storage (<reason>)` (e.g. `mutation-burst-inactivity`).
+- When the auto-save runs the server logs: `[VectoriaDBServer] auto-saved storage (<reason>)` (e.g. `mutation-burst-inactivity` or `inactivity`).
 - To test: simulate mutation calls and assert `saveToStorage()` is invoked after `mutationInactivityMs`; verify `minSaveIntervalMs` prevents frequent saves.
+
+Inactivity-only mode (simpler)
+
+If your application is small or you prefer a simpler policy, enable `autoSaveOnInactivity: true`. With this enabled the server will call `saveToStorage()` after `mutationInactivityMs` of no mutation activity — regardless of how many mutations occurred before the idle period. The inactivity timer resets on each mutation.
+
+Example:
+
+```javascript
+const server = new VectoriaDBServer({
+  autoSaveOnInactivity: true,
+  mutationInactivityMs: 30 * 1000, // save 30s after last mutation
+})
+```
 
 ### Client Options
 

@@ -16,6 +16,8 @@ export default class VectoriaDBServer {
 
     // --- auto-save / burst-detection (configurable) ---
     this.autoSaveOnMutationBurst = opts.autoSaveOnMutationBurst !== undefined ? !!opts.autoSaveOnMutationBurst : true
+    // when true the server will save after any inactivity period (see `mutationInactivityMs`) — useful for small apps
+    this.autoSaveOnInactivity = opts.autoSaveOnInactivity !== undefined ? !!opts.autoSaveOnInactivity : false
     this.mutationBurstThreshold = Number(opts.mutationBurstThreshold) || 5
     this.mutationBurstWindowMs = Number(opts.mutationBurstWindowMs) || 2 * 60 * 1000 // 2 minutes
     this.mutationInactivityMs = Number(opts.mutationInactivityMs) || 30 * 1000 // 30s inactivity to trigger save
@@ -226,7 +228,19 @@ export default class VectoriaDBServer {
   async _onInactivityTimeout() {
     this._inactivityTimer = null
     const now = Date.now()
-    // count mutations within the burst window
+
+    // Simple "inactivity-only" mode: save after any inactivity period if enabled.
+    if (this.autoSaveOnInactivity) {
+      if (this._mutationTimestamps.length > 0) {
+        await this._saveToStorage('inactivity')
+      }
+      // reset history and return early
+      this._mutationTimestamps = []
+      this._lastBurstAt = 0
+      return
+    }
+
+    // count mutations within the burst window (existing burst-detection behavior)
     const cutoff = now - this.mutationBurstWindowMs
     const recentCount = this._mutationTimestamps.filter(ts => ts >= cutoff).length
     if (recentCount >= this.mutationBurstThreshold) {
