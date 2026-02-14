@@ -19,63 +19,89 @@ export default class VectoriaDBServer {
     this._vectoria = null
     this._sockets = new Set()
     this._started = false
+    this._startPromise = null
   }
 
   async listen() {
-    if (this._started) return
-    // Initialize VectoriaDB (loads models / storage as configured)
-    this._vectoria = new VectoriaDB(this.vectoriadbConfig)
-    if (typeof this._vectoria.initialize === 'function') {
-      await this._vectoria.initialize()
-    }
+    // fast-path: already started
+    if (this._started) return this
 
-    this._http = http.createServer((req, res) => {
-      res.writeHead(200, { 'Content-Type': 'text/plain' })
-      res.end('VectoriaDB Server')
-    })
+    // if a start is already in progress, return the same promise
+    if (this._startPromise) return this._startPromise
 
-    this._io = new IOServer(this._http, {
-      cors: { origin: this.cors.length ? this.cors : '*', methods: ['GET', 'POST'] },
-      maxHttpBufferSize: 1e7,
-    })
-
-    const nsp = this._io.of('/vectoriadb')
-
-    nsp.use((socket, next) => {
-      // simple API key auth if configured
-      if (this.apiKey) {
-        const provided = socket.handshake.auth?.apiKey || socket.handshake.query?.apiKey
-        if (!provided || provided !== this.apiKey) {
-          return next(new Error('Unauthorized'))
+    this._startPromise = (async () => {
+      try {
+        // Initialize VectoriaDB (loads models / storage as configured)
+        this._vectoria = new VectoriaDB(this.vectoriadbConfig)
+        if (typeof this._vectoria.initialize === 'function') {
+          await this._vectoria.initialize()
         }
-      }
-      next()
-    })
 
-    nsp.on('connection', socket => {
-      this._sockets.add(socket)
-      socket.on('disconnect', () => this._sockets.delete(socket))
+        this._http = http.createServer((req, res) => {
+          res.writeHead(200, { 'Content-Type': 'text/plain' })
+          res.end('VectoriaDB Server')
+        })
 
-      socket.on('request', async payload => {
-        // payload: { id, method, params, collection, timestamp }
+        this._io = new IOServer(this._http, {
+          cors: { origin: this.cors.length ? this.cors : '*', methods: ['GET', 'POST'] },
+          maxHttpBufferSize: 1e7,
+        })
+
+        const nsp = this._io.of('/vectoriadb')
+
+        nsp.use((socket, next) => {
+          // simple API key auth if configured
+          if (this.apiKey) {
+            const provided = socket.handshake.auth?.apiKey || socket.handshake.query?.apiKey
+            if (!provided || provided !== this.apiKey) {
+              return next(new Error('Unauthorized'))
+            }
+          }
+          next()
+        })
+
+        nsp.on('connection', socket => {
+          this._sockets.add(socket)
+          socket.on('disconnect', () => this._sockets.delete(socket))
+
+          socket.on('request', async payload => {
+            // payload: { id, method, params, collection, timestamp }
+            try {
+              await this._handleRequest(socket, payload)
+            } catch (err) {
+              socket.emit('response', { id: payload?.id ?? null, result: null, error: { message: err.message }, took: 0 })
+            }
+          })
+
+          // allow ping from client
+          socket.on('health', cb => cb && cb({ ok: true, ts: Date.now() }))
+        })
+
+        await new Promise((res, rej) => {
+          this._http.listen(this.port, this.host, err => (err ? rej(err) : res()))
+        })
+
+        this._started = true
+        console.log(`VectoriaDB Server listening on ${this.host}:${this.port}`)
+        return this
+      } catch (err) {
+        // cleanup partial resources on failure
         try {
-          await this._handleRequest(socket, payload)
-        } catch (err) {
-          socket.emit('response', { id: payload?.id ?? null, result: null, error: { message: err.message }, took: 0 })
-        }
-      })
+          if (this._io) await this._io.close()
+        } catch (e) {}
+        try {
+          if (this._http) this._http.close(() => {})
+        } catch (e) {}
+        throw err
+      }
+    })()
 
-      // allow ping from client
-      socket.on('health', cb => cb && cb({ ok: true, ts: Date.now() }))
-    })
-
-    await new Promise((res, rej) => {
-      this._http.listen(this.port, this.host, err => (err ? rej(err) : res()))
-    })
-
-    this._started = true
-    console.log(`VectoriaDB Server listening on ${this.host}:${this.port}`)
-    return this
+    try {
+      return await this._startPromise
+    } finally {
+      // ensure the in-progress marker is cleared after attempt completes
+      this._startPromise = null
+    }
   }
 
   async _handleRequest(socket, payload) {
