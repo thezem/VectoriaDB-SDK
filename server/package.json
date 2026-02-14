@@ -1,11 +1,12 @@
 {
   "name": "@ouim/vectoriadb-server",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "demo": "node demo.js"
+    "demo": "node demo.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

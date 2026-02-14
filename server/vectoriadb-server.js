@@ -148,15 +148,21 @@ export default class VectoriaDBServer {
     // Allow passing serialized functions from client: convert stringified functions back to real functions
     const reparsedParams = params.map(p => {
       if (p && typeof p === 'object') {
-        // detect serialized function marker
+        // Top-level serialized function (client forwarded a function as a param)
         if (p.__isFnString && typeof p.fn === 'string') {
           // create function from string - executed in server process (trusted usage only)
           // eslint-disable-next-line no-new-func
           const fn = new Function('return (' + p.fn + ')')()
           return fn
         }
-        // also support options.filter as a string directly
-        if (typeof p.filter === 'string' && p.filter.trim().startsWith('function')) {
+
+        // Support serialized `filter` nested inside an `options` object:
+        // - { filter: { __isFnString: true, fn: 'function(m) { ... }' } }
+        // - or `filter` as a raw function string
+        if (p.filter && typeof p.filter === 'object' && p.filter.__isFnString && typeof p.filter.fn === 'string') {
+          // eslint-disable-next-line no-new-func
+          p.filter = new Function('return (' + p.filter.fn + ')')()
+        } else if (typeof p.filter === 'string' && p.filter.trim().startsWith('function')) {
           // eslint-disable-next-line no-new-func
           p.filter = new Function('return (' + p.filter + ')')()
         }
