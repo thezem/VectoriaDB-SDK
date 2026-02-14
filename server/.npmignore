@@ -1,0 +1,10 @@
+node_modules/
+*/node_modules/
+*/.cache/
+/vectoriaDOCS
+.env
+node_modules/
+node_modules/
+.cache/
+/vectoriaDOCS
+.env

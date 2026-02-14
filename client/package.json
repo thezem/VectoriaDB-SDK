@@ -1,6 +1,6 @@
 {
   "name": "@ouim/vectoriadb-client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -12,5 +12,9 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thezem/vectoriadb-sdk.git"
   }
 }
