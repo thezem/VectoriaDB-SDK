@@ -4,6 +4,8 @@
 
 A lightweight, JavaScript-only client/server SDK for [VectoriaDB](https://github.com/agentfront/vectoriadb). Forward vector database operations from client applications to a centralized server instance with ease.
 
+> ⚠️ **Not for large production deployments.** This SDK is primarily intended for small applications, prototypes, demos, and hobby projects where quick setup and simplicity are priorities. For mission‑critical or large-scale production use, consider a hardened, production-grade solution.
+
 ---
 
 ## Features
@@ -171,6 +173,7 @@ volumes:
 
 ## Best Practices
 
+- **Intended use**: Not recommended for large production systems — best suited for prototypes, demos, and hobby projects where quick setup matters.
 - **Batching**: Use `addMany` instead of repeated `add` calls for efficiency.
 - **Timeouts**: Adjust `requestTimeout` for large-scale operations.
 - **Shutdown**: Always call `db.close()` on the client and `server.close()` on the server for graceful termination.
