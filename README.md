@@ -189,15 +189,6 @@ A: The client SDK stringifies your filter function. The server then reconstructs
 
 ---
 
-## Future Roadmap
-
-- [ ] **JWT Authentication**: Add more robust auth options.
-- [ ] **Data Encryption**: Support for end-to-end encryption of metadata.
-- [ ] **Multi-Instance**: Support for multiple VectoriaDB instances managed by one server.
-- [ ] **Python Client**: A compatible SDK for Python applications.
-
----
-
 ## Credits
 
 This SDK builds on and integrates with [VectoriaDB](https://github.com/agentfront/vectoriadb). See the Vectoria product website at [https://agentfront.dev/vectoria](https://agentfront.dev/vectoria) for more information and additional resources.
