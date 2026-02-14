@@ -24,7 +24,19 @@ export default class VectoriaDBServer {
     this.minSaveIntervalMs = Number(opts.minSaveIntervalMs) || 10 * 1000 // minimum time between auto-saves
 
     // internal mutation-tracking state
-    this._mutationMethods = new Set(['add', 'addMany', 'update', 'remove', 'clear', 'insert', 'upsert', 'replace', 'put', 'delete'])
+    this._mutationMethods = new Set([
+      'add',
+      'addMany',
+      'update',
+      'remove',
+      'removeMany',
+      'clear',
+      'insert',
+      'upsert',
+      'replace',
+      'put',
+      'delete',
+    ])
     this._mutationTimestamps = []
     this._inactivityTimer = null
     this._lastBurstAt = 0
