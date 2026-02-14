@@ -166,6 +166,22 @@ export default class VectoriaDBServer {
           // eslint-disable-next-line no-new-func
           p.filter = new Function('return (' + p.filter + ')')()
         }
+
+        // If a `filterContext` was provided alongside a deserialized `filter`,
+        // wrap the filter so it will be invoked as `filter(metadata, filterContext)`
+        if (p.filter && typeof p.filter === 'function' && Object.prototype.hasOwnProperty.call(p, 'filterContext')) {
+          const __ctx = p.filterContext
+          const __origFilter = p.filter
+          p.filter = function (m) {
+            try {
+              return __origFilter.call(this, m, __ctx)
+            } catch (e) {
+              return false
+            }
+          }
+          // remove filterContext so the underlying VectoriaDB doesn't receive unexpected fields
+          delete p.filterContext
+        }
       }
       return p
     })

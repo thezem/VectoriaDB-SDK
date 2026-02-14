@@ -101,6 +101,12 @@ export default class VectoriaDB {
     if (opts.filter && typeof opts.filter === 'function') {
       opts.filter = VectoriaDB._serializeFunction(opts.filter)
     }
+
+    // forward optional `filterContext` (must be JSON-serializable)
+    if (opts.filterContext !== undefined && typeof opts.filterContext === 'function') {
+      throw new TypeError('filterContext must be serializable (not a function)')
+    }
+
     return this._forward('search', queryOrVector, opts)
   }
 
@@ -150,11 +156,15 @@ export default class VectoriaDB {
       }
 
       // inline user's filter so the combined function is self-contained server-side
-      const combinedFnStr = `(function(m){ try { const __orig = ${origFnStr}; return !!(__orig(m) && m && m.owner === ${ownerLiteral}); } catch(e) { return false } })`
+      // the combined function accepts a second `__ctx` arg — pass `filterContext` from the client
+      const combinedFnStr = `(function(m,__ctx){ try { const __orig = ${origFnStr}; return !!(__orig(m,__ctx) && m && m.owner === ${ownerLiteral}); } catch(e) { return false } })`
       options.filter = VectoriaDB._serializeFunction(combinedFnStr)
+      // forward any provided filterContext to the server so the inlined function can use it
+      if (opts.filterContext !== undefined) options.filterContext = opts.filterContext
     } else {
-      const ownerFnStr = `(function(m){ return m && m.owner === ${ownerLiteral}; })`
+      const ownerFnStr = `(function(m,__ctx){ return m && m.owner === ${ownerLiteral}; })`
       options.filter = VectoriaDB._serializeFunction(ownerFnStr)
+      if (opts.filterContext !== undefined) options.filterContext = opts.filterContext
     }
 
     return this.search(queryVectorOrText, options)

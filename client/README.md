@@ -92,6 +92,24 @@ const results = await db.search('cloud computing', {
 })
 ```
 
+#### Passing `filterContext` (new)
+
+Filters are executed on the server; they must be self-contained. If your filter needs runtime values from the client (for example `chatId` or user info), pass them explicitly via `filterContext`.
+
+```javascript
+const results = await db.search(query, {
+  topK: 10,
+  filter: (metadata, ctx) => metadata.type === 't-bot-context' && metadata.chatId === ctx.chatId,
+  filterContext: { chatId }, // JSON-serializable context sent to the server
+})
+```
+
+Notes:
+
+- `filter` will be invoked server-side as `filter(metadata, filterContext)`.
+- `filterContext` must be JSON-serializable (no functions).
+- This avoids relying on client-side closures that are not available on the server.
+
 ### Collection-Style API
 
 Use `insert` and `query` for a more traditional database feel:
