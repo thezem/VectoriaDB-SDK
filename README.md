@@ -1,70 +1,207 @@
-# VectoriaDB SDK (client/server)
+# VectoriaDB SDK
 
-Lightweight JavaScript-only client/server SDK that forwards VectoriaDB operations from client apps to a central server instance.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)]()
 
-## Structure
+A lightweight, JavaScript-only client/server SDK for [VectoriaDB](https://github.com/agentfront/vectoriadb). Forward vector database operations from client applications to a centralized server instance with ease.
 
-```
+---
+
+## Features
+
+- **Mirror API**: Client SDK replicates the full VectoriaDB API surface.
+- **Remote Execution**: Perform heavy vector operations on the server; keep your client light.
+- **Smart Filtering**: Send JavaScript functions as filters; they are automatically serialized and executed on the server.
+- **Streaming Support**: Smoothly handle large result sets with built-in chunking.
+- **Robust Connection**: Automatic reconnection, request queueing, and configurable timeouts.
+- **Collection Helpers**: High-level abstractions for simplified document management.
+
+## Project Structure
+
+```text
 vectoriadb-sdk/
-├── server/         # Server SDK (hosts VectoriaDB instance)
-└── client/         # Client SDK (mimics VectoriaDB API, forwards via socket.io)
+├── server/         # Server implementation (hosts VectoriaDB instance)
+└── client/         # Client implementation (forwards requests via Socket.io)
 ```
 
-## Quick start
+## Quick Start
 
-1. Install server dependencies and start the server (requires `vectoriadb` installed):
+### 1. Start the Server
+
+The server requires `vectoriadb` to be installed.
 
 ```bash
-cd vectoriadb-sdk/server
+cd server
 npm install
 npm start
 ```
 
-2. Install client and run demo (client depends only on `socket.io-client`):
+**Basic Server Configuration (`server/index.js`):**
+
+```javascript
+import VectoriaDBServer from 'vectoriadb-sdk/server'
+
+const server = new VectoriaDBServer({
+  port: 3001,
+  cors: ['http://localhost:3000'],
+  // apiKey: 'your-secure-key' // Optional authentication
+})
+
+await server.listen()
+```
+
+### 2. Connect the Client
 
 ```bash
-cd vectoriadb-sdk/client
+cd client
 npm install
-npm run demo
 ```
 
-## Design highlights ✅
+**Basic Usage:**
 
-- Socket.io namespace: `/vectoriadb`
-- Request format: `{ id, method, params, collection, timestamp }`
-- Response format: `{ result, error, took }` + chunked `response-chunk` events for large arrays
-- Client mirrors VectoriaDB API (add/addMany/search/update/etc.)
-- Convenience collection-style methods: `createCollection`, `insert`, `query`
-- Client-side validation + server-side execution using the real `vectoriadb` instance
-- Streaming for large results, offline queueing, auto-reconnect, request timeouts
+```javascript
+import VectoriaDB from 'vectoriadb-sdk/client'
 
-## Security note
+const db = new VectoriaDB({
+  serverUrl: 'http://localhost:3001',
+  // apiKey: 'your-secure-key'
+})
 
-Filter functions passed from client are serialized and evaluated server-side. Do NOT accept untrusted client connections in production without additional sandboxing.
+await db.initialize()
 
-## Files to inspect
+// Add documents
+await db.add('doc1', 'Vector databases are awesome!', { category: 'tech' })
 
-- `server/vectoriadb-server.js` — Server class, exposes VectoriaDB over socket.io
-- `client/index.js` — Client SDK that mimics VectoriaDB API
-- `client/socket-client.js` — socket.io client wrapper with queueing/reconnect/timeouts
+// Search with semantic similarity
+const results = await db.search('vector database', { topK: 5 })
+console.log(results)
+```
 
-## Docker Volumes
+---
 
-When using Docker, mount the cache directory as a volume:
+## Advanced Search & Filtering
 
-```yaml title="docker-compose.yml" theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+### Remote Function Filtering
+
+One of the most powerful features is the ability to filter results server-side using client-defined functions:
+
+```javascript
+const results = await db.search('cloud computing', {
+  filter: metadata => metadata.category === 'tech' && metadata.priority > 5,
+  threshold: 0.7, // Strict similarity matching
+})
+```
+
+### Collection-Style API
+
+Use `insert` and `query` for a more traditional database feel:
+
+```javascript
+await db.insert('my-collection', [
+  { text: 'Hello World', metadata: { author: 'Alice' } },
+  { text: 'Goodbye World', metadata: { author: 'Bob' } },
+])
+
+const bobDocs = await db.query('my-collection', 'farewell', {
+  filter: m => m.author === 'Bob',
+})
+```
+
+---
+
+## ⚙️ Configuration
+
+### Server Options
+
+| Option            | Description                            | Default    |
+| :---------------- | :------------------------------------- | :--------- |
+| `port`            | Server listening port                  | `3001`     |
+| `host`            | Server host address                    | `0.0.0.0`  |
+| `apiKey`          | Optional key for client authentication | `null`     |
+| `cors`            | Allowed origins (array)                | `[]` (All) |
+| `streamChunkSize` | Max results per chunk for streaming    | `500`      |
+
+### Client Options
+
+| Option           | Description                  | Default      |
+| :--------------- | :--------------------------- | :----------- |
+| `serverUrl`      | URL of the VectoriaDB server | **Required** |
+| `apiKey`         | Authentication key           | `null`       |
+| `requestTimeout` | API request timeout in ms    | `30000`      |
+
+---
+
+## Large Datasets & Streaming
+
+The SDK automatically handles large result sets by chunking data on the server and assembling it on the client. This prevents memory issues and payload limits when retrieving thousands of vectors.
+
+- **Automatic assembly**: You don't need to worry about chunks; the `Promise` resolves only when all data has arrived.
+- **Configurable limits**: Set `streamChunkSize` on the server to tune the chunking behavior.
+
+## Connection Resilience
+
+Built for real-world networks, the client includes:
+
+- **Offline Queueing**: Requests made while the connection is down are queued and sent automatically upon reconnection.
+- **Heartbeat & Health Checks**: Monitors connection status to ensure reliable delivery.
+- **Configurable Timeouts**: Each request can have its own timeout, or use a global default.
+
+---
+
+## Security Note
+
+> [!WARNING] Filter functions passed from the client are serialized and evaluated on the server using `new Function()`. **Never** expose the server to untrusted clients without strict network controls or additional sandboxing.
+
+---
+
+## Docker Integration
+
+When deploying with Docker, ensure you persist the database state:
+
+```yaml
 services:
-  app:
+  vectoriadb-server:
+    image: node:18
+    # ... other config
     volumes:
-      - vectoria-cache:/app/.cache/vectoriadb
+      - vectoria-data:/app/server/.cache/vectoriadb
 
 volumes:
-  vectoria-cache:
+  vectoria-data:
 ```
 
-## Next steps / recommendations 💡
+## Best Practices
 
-- Add authentication middleware (API key is supported; extend for JWT/OAuth)
-- Add transport encryption (TLS) for production
-- Add unit + integration tests and CI pipeline
-- Optionally support multiple VectoriaDB instances per collection on server
+- **Batching**: Use `addMany` instead of repeated `add` calls for efficiency.
+- **Timeouts**: Adjust `requestTimeout` for large-scale operations.
+- **Shutdown**: Always call `db.close()` on the client and `server.close()` on the server for graceful termination.
+
+---
+
+## FAQ
+
+**Q: Do I need `vectoriadb` on the client?**  
+A: No! The client only needs `socket.io-client`. It's designed to be used in browsers or lightweight Node environments.
+
+**Q: How does the server-side filtering work?**  
+A: The client SDK stringifies your filter function. The server then reconstructs it using `new Function()`. This is why the filter must be self-contained and not rely on variables outside its scope.
+
+---
+
+## Future Roadmap
+
+- [ ] **JWT Authentication**: Add more robust auth options.
+- [ ] **Data Encryption**: Support for end-to-end encryption of metadata.
+- [ ] **Multi-Instance**: Support for multiple VectoriaDB instances managed by one server.
+- [ ] **Python Client**: A compatible SDK for Python applications.
+
+---
+
+## Credits
+
+This SDK builds on and integrates with [VectoriaDB](https://github.com/agentfront/vectoriadb). See the Vectoria product website at [https://agentfront.dev/vectoria](https://agentfront.dev/vectoria) for more information and additional resources.
+
+---
+
+## License
+
+MIT © 2026 VectoriaDB SDK Authors
