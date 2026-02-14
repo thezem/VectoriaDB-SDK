@@ -29,23 +29,22 @@ vectoriadb-sdk/
 
 ### 1. Start the Server
 
-The server requires `vectoriadb` to be installed.
-
 ```bash
-cd server
-npm install
-npm start
+npm install @ouim/vectoriadb-server
 ```
 
 **Basic Server Configuration (`server/index.js`):**
 
 ```javascript
-import VectoriaDBServer from '@ouim/vectoriadb-server'
+import VectoriaDBServer, { FileStorageAdapter } from '@ouim/vectoriadb-server'
 
 const server = new VectoriaDBServer({
   port: 3001,
   cors: ['http://localhost:3000'],
   // apiKey: 'your-secure-key' // Optional authentication
+  // vectoriadbConfig: {
+  //   storageAdapter: new FileStorageAdapter({ cacheDir: './.cache/vectoriadb', namespace: 'default' }),
+  // },
 })
 
 await server.listen()

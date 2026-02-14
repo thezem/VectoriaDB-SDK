@@ -113,13 +113,55 @@ const bobDocs = await db.query('my-collection', 'farewell', {
 
 ### Server Options
 
-| Option            | Description                            | Default    |
-| :---------------- | :------------------------------------- | :--------- |
-| `port`            | Server listening port                  | `3001`     |
-| `host`            | Server host address                    | `0.0.0.0`  |
-| `apiKey`          | Optional key for client authentication | `null`     |
-| `cors`            | Allowed origins (array)                | `[]` (All) |
-| `streamChunkSize` | Max results per chunk for streaming    | `500`      |
+| Option                    | Description                                                                 | Default    |
+| :------------------------ | :-------------------------------------------------------------------------- | :--------- |
+| `port`                    | Server listening port                                                       | `3001`     |
+| `host`                    | Server host address                                                         | `0.0.0.0`  |
+| `apiKey`                  | Optional key for client authentication                                      | `null`     |
+| `cors`                    | Allowed origins (array)                                                     | `[]` (All) |
+| `streamChunkSize`         | Max results per chunk for streaming                                         | `500`      |
+| `autoSaveOnMutationBurst` | Enable automatic saveToStorage after a burst of mutation calls + idle       | `true`     |
+| `mutationBurstThreshold`  | Number of mutation calls within `mutationBurstWindowMs` to consider a burst | `100`      |
+| `mutationBurstWindowMs`   | Time window (ms) used to count burst mutations                              | `120000`   |
+| `mutationInactivityMs`    | Inactivity window (ms) after last mutation that triggers save               | `30000`    |
+| `minSaveIntervalMs`       | Minimum time (ms) between automatic saves to avoid thrashing                | `10000`    |
+
+Auto-save on mutation bursts
+
+A configurable mechanism that detects "mutation bursts" and automatically calls `saveToStorage()` after activity stops. This minimizes write amplification during heavy write periods while ensuring state is persisted shortly after the burst finishes.
+
+How it works:
+
+- A "burst" is detected when at least `mutationBurstThreshold` mutation operations occur within the `mutationBurstWindowMs` time window.
+- When a burst has been detected, the server starts (or resets) an inactivity timer of `mutationInactivityMs` after the last mutation.
+- If the inactivity timer expires and the recent mutation count still meets the threshold, the server calls `saveToStorage()` once.
+- `minSaveIntervalMs` prevents repeated auto-saves from occurring too frequently; overlapping saves are also avoided by an internal in-progress flag.
+- After the inactivity handler runs the mutation history is cleared until new activity occurs.
+
+Behavior timeline (concrete example):
+
+- Settings: `mutationBurstThreshold = 100`, `mutationBurstWindowMs = 120000` (2 min), `mutationInactivityMs = 30000` (30s).
+- If 120 mutations arrive between t=0 and t=90s (burst detected), and no further mutations occur after t=90s, the server waits 30s (inactivity window) and calls `saveToStorage()` at ~t=120s (provided `minSaveIntervalMs` allows it).
+
+Configuration example:
+
+```javascript
+const server = new VectoriaDBServer({
+  port: 3001,
+  autoSaveOnMutationBurst: true,
+  mutationBurstThreshold: 100, // # mutations within the window to mark a burst
+  mutationBurstWindowMs: 2 * 60 * 1000, // window length used to count mutations
+  mutationInactivityMs: 30 * 1000, // wait this long after last mutation before saving
+  minSaveIntervalMs: 10 * 1000, // never auto-save more often than this
+})
+```
+
+Log & testing notes:
+
+- When the auto-save runs the server logs: `[VectoriaDBServer] auto-saved storage (<reason>)` (e.g. `mutation-burst-inactivity`).
+- To test: simulate mutation calls and assert `saveToStorage()` is invoked after `mutationInactivityMs`; verify `minSaveIntervalMs` prevents frequent saves.
+
+### Client Options
 
 ### Client Options
 

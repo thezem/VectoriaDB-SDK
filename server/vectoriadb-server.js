@@ -14,6 +14,21 @@ export default class VectoriaDBServer {
     this.vectoriadbConfig = opts.vectoriadbConfig || {}
     this.streamChunkSize = opts.streamChunkSize || 500
 
+    // --- auto-save / burst-detection (configurable) ---
+    this.autoSaveOnMutationBurst = opts.autoSaveOnMutationBurst !== undefined ? !!opts.autoSaveOnMutationBurst : true
+    this.mutationBurstThreshold = Number(opts.mutationBurstThreshold) || 5
+    this.mutationBurstWindowMs = Number(opts.mutationBurstWindowMs) || 2 * 60 * 1000 // 2 minutes
+    this.mutationInactivityMs = Number(opts.mutationInactivityMs) || 30 * 1000 // 30s inactivity to trigger save
+    this.minSaveIntervalMs = Number(opts.minSaveIntervalMs) || 10 * 1000 // minimum time between auto-saves
+
+    // internal mutation-tracking state
+    this._mutationMethods = new Set(['add', 'addMany', 'update', 'remove', 'clear', 'insert', 'upsert', 'replace', 'put', 'delete'])
+    this._mutationTimestamps = []
+    this._inactivityTimer = null
+    this._lastBurstAt = 0
+    this._savingInProgress = false
+    this._lastSaveAt = 0
+
     this._http = null
     this._io = null
     this._vectoria = null
@@ -148,6 +163,15 @@ export default class VectoriaDBServer {
         new Promise((_, reject) => setTimeout(() => reject(new Error('ServerTimeout')), 30000)),
       ])
 
+      // record mutation activity (used to auto-flush after a burst + inactivity)
+      if (this.autoSaveOnMutationBurst && this._isMutationMethod(method)) {
+        try {
+          this._recordMutation()
+        } catch (e) {
+          /* swallow tracking errors */
+        }
+      }
+
       const took = Date.now() - start
 
       // streaming support for very large arrays
@@ -169,8 +193,74 @@ export default class VectoriaDBServer {
     }
   }
 
+  // --- Auto-save on mutation bursts (configurable) ---
+  _isMutationMethod(method) {
+    return this._mutationMethods.has(method)
+  }
+
+  _recordMutation() {
+    const now = Date.now()
+    this._mutationTimestamps.push(now)
+    // purge old timestamps outside the burst window
+    const cutoff = now - this.mutationBurstWindowMs
+    while (this._mutationTimestamps.length && this._mutationTimestamps[0] < cutoff) {
+      this._mutationTimestamps.shift()
+    }
+    if (this._mutationTimestamps.length >= this.mutationBurstThreshold) {
+      this._lastBurstAt = now
+    }
+    this._scheduleInactivityTimer()
+  }
+
+  _scheduleInactivityTimer() {
+    if (this._inactivityTimer) {
+      clearTimeout(this._inactivityTimer)
+    }
+    this._inactivityTimer = setTimeout(() => {
+      // fire-and-forget async
+      this._onInactivityTimeout().catch(err => console.warn('Inactivity flush error:', err.message))
+    }, this.mutationInactivityMs)
+    if (this._inactivityTimer.unref) this._inactivityTimer.unref()
+  }
+
+  async _onInactivityTimeout() {
+    this._inactivityTimer = null
+    const now = Date.now()
+    // count mutations within the burst window
+    const cutoff = now - this.mutationBurstWindowMs
+    const recentCount = this._mutationTimestamps.filter(ts => ts >= cutoff).length
+    if (recentCount >= this.mutationBurstThreshold) {
+      await this._saveToStorage('mutation-burst-inactivity')
+    }
+    // reset history (we only track bursts between inactivity windows)
+    this._mutationTimestamps = []
+    this._lastBurstAt = 0
+  }
+
+  async _saveToStorage(reason = 'manual') {
+    if (!this._vectoria || typeof this._vectoria.saveToStorage !== 'function') return
+    const now = Date.now()
+    if (this._savingInProgress) return
+    if (now - this._lastSaveAt < this.minSaveIntervalMs) return
+    this._savingInProgress = true
+    try {
+      await this._vectoria.saveToStorage()
+      this._lastSaveAt = Date.now()
+      console.log(`[VectoriaDBServer] auto-saved storage (${reason})`)
+    } catch (err) {
+      console.warn('[VectoriaDBServer] auto-save failed:', err.message)
+    } finally {
+      this._savingInProgress = false
+    }
+  }
+
   async close() {
     if (!this._started) return
+    // stop any pending auto-save timer
+    if (this._inactivityTimer) {
+      clearTimeout(this._inactivityTimer)
+      this._inactivityTimer = null
+    }
     // disconnect sockets
     for (const s of Array.from(this._sockets)) {
       try {
