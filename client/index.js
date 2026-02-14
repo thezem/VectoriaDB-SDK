@@ -129,15 +129,32 @@ export default class VectoriaDB {
     if (!collection || typeof collection !== 'string') throw new TypeError('collection required')
     const options = { ...opts }
     const originalFilter = options.filter
-    // compose filter: existing filter AND owner === collection
-    const ownerFilter = m => m && m.owner === collection
+
+    // Build a self-contained, serializable filter that enforces owner === collection
+    // and (optionally) runs the user's filter. We inline the user's filter source
+    // so the resulting function does not rely on outer closures when evaluated
+    // on the server process.
+    const ownerLiteral = JSON.stringify(collection)
 
     if (originalFilter) {
-      // combined predicate
-      const combined = m => originalFilter(m) && ownerFilter(m)
-      options.filter = VectoriaDB._serializeFunction(combined)
+      // normalize original filter to a source string
+      let origFnStr
+      if (typeof originalFilter === 'function') {
+        origFnStr = originalFilter.toString()
+      } else if (typeof originalFilter === 'string') {
+        origFnStr = originalFilter
+      } else if (originalFilter && originalFilter.__isFnString && typeof originalFilter.fn === 'string') {
+        origFnStr = originalFilter.fn
+      } else {
+        throw new TypeError('filter must be a function or serialized function')
+      }
+
+      // inline user's filter so the combined function is self-contained server-side
+      const combinedFnStr = `(function(m){ try { const __orig = ${origFnStr}; return !!(__orig(m) && m && m.owner === ${ownerLiteral}); } catch(e) { return false } })`
+      options.filter = VectoriaDB._serializeFunction(combinedFnStr)
     } else {
-      options.filter = VectoriaDB._serializeFunction(ownerFilter)
+      const ownerFnStr = `(function(m){ return m && m.owner === ${ownerLiteral}; })`
+      options.filter = VectoriaDB._serializeFunction(ownerFnStr)
     }
 
     return this.search(queryVectorOrText, options)

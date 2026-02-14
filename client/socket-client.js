@@ -46,10 +46,15 @@ export default class SocketClient {
       const pending = this._pending.get(id)
       if (!pending) return
 
-      if (pending.chunks) {
-        // if we were receiving chunks, a final 'response' indicates stream end
-        pending.resolve(pending.chunks.flat())
+      // If streamed chunks were received, assemble them in index order.
+      if (pending.chunksMap) {
+        const chunksMap = pending.chunksMap
+        const indexes = Object.keys(chunksMap)
+          .map(k => Number(k))
+          .sort((a, b) => a - b)
+        const assembled = indexes.flatMap(i => (Array.isArray(chunksMap[i]) ? chunksMap[i] : []))
         clearTimeout(pending.timer)
+        pending.resolve(assembled)
         this._pending.delete(id)
         return
       }
@@ -61,11 +66,23 @@ export default class SocketClient {
     })
 
     this.socket.on('response-chunk', msg => {
-      const { id, chunk } = msg || {}
+      const { id, chunk, index, totalChunks } = msg || {}
       const pending = this._pending.get(id)
       if (!pending) return
-      if (!pending.chunks) pending.chunks = []
-      pending.chunks.push(chunk)
+
+      if (!pending.chunksMap) pending.chunksMap = {}
+      pending.chunksMap[index] = chunk
+      pending.receivedChunks = (pending.receivedChunks || 0) + 1
+      if (typeof totalChunks === 'number') pending.totalChunks = totalChunks
+
+      // reset timeout so long streams don't prematurely fail
+      if (pending.timer) {
+        clearTimeout(pending.timer)
+        pending.timer = setTimeout(() => {
+          this._pending.delete(id)
+          pending.reject(new Error('RequestTimeout'))
+        }, pending.timeoutMs || this.requestTimeout)
+      }
     })
   }
 
@@ -80,7 +97,9 @@ export default class SocketClient {
         reject(new Error('RequestTimeout'))
       }, effectiveTimeout)
 
-      this._pending.set(id, { resolve, reject, timer })
+      // store extra metadata so streaming chunks can reset the timer and be
+      // assembled in order on final response
+      this._pending.set(id, { resolve, reject, timer, timeoutMs: effectiveTimeout, chunksMap: null, receivedChunks: 0, totalChunks: null })
 
       if (this.socket.connected) {
         this.socket.emit('request', payload)
