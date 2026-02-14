@@ -48,6 +48,20 @@ Filter functions passed from client are serialized and evaluated server-side. Do
 - `client/index.js` — Client SDK that mimics VectoriaDB API
 - `client/socket-client.js` — socket.io client wrapper with queueing/reconnect/timeouts
 
+## Docker Volumes
+
+When using Docker, mount the cache directory as a volume:
+
+```yaml title="docker-compose.yml" theme={"theme":{"light":"snazzy-light","dark":"dark-plus"}}
+services:
+  app:
+    volumes:
+      - vectoria-cache:/app/.cache/vectoriadb
+
+volumes:
+  vectoria-cache:
+```
+
 ## Next steps / recommendations 💡
 
 - Add authentication middleware (API key is supported; extend for JWT/OAuth)
