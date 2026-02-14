@@ -1,10 +1,11 @@
 import VectoriaDBServer from './vectoriadb-server.js'
+import { FileStorageAdapter } from 'vectoriadb'
 
 async function main() {
   const server = new VectoriaDBServer({
     port: 3001,
     vectoriadbConfig: {
-      cacheDir: './.cache/vectoriadb',
+      storageAdapter: new FileStorageAdapter({ cacheDir: './.cache/vectoriadb', namespace: 'default' }),
     },
   })
 
